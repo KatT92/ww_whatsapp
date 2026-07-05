@@ -255,9 +255,7 @@ with tab1:
                         st.rerun()
                     else:
                         st.error(
-                            "Could not delete this cached chat because Windows/OneDrive "
-                            "is locking it. Close any File Explorer windows using the "
-                            "folder, then try again."
+                            "Could not delete this cached chat, please close the file and try again"
                         )
         else:
             st.info("No cached chat sets yet.")
