@@ -149,7 +149,6 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
 with tab1:
     st.header("Upload, merge, and cache chats")
 
-
     st.subheader("Upload new chats")
 
     uploaded_files = st.file_uploader(
@@ -207,9 +206,7 @@ with tab1:
                 f"txt files as '{saved_cache_name}'."
             )
 
-
     st.divider()
-
 
     with st.expander("Load or delete cached chats", expanded=False):
         cached_chat_sets = list_cached_chat_sets()
@@ -225,13 +222,15 @@ with tab1:
 
             with col_load:
                 if st.button("Load cached chat set", key="load_cached_chat_button"):
-                    file_data, cached_source_mapping, cached_pattern = load_cached_txt_cache(
-                        selected_cache
+                    file_data, cached_source_mapping, cached_pattern = (
+                        load_cached_txt_cache(selected_cache)
                     )
 
                     raw = cached_load_chats_from_bytes(
                         file_data=file_data,
-                        source_mapping_items_=source_mapping_items(cached_source_mapping),
+                        source_mapping_items_=source_mapping_items(
+                            cached_source_mapping
+                        ),
                         pattern=cached_pattern,
                     )
 
@@ -276,7 +275,6 @@ with tab1:
 
     st.divider()
 
-
     with st.expander("Advanced settings", expanded=False):
         st.text_input(
             "WhatsApp message regex pattern",
@@ -310,7 +308,7 @@ with tab2:
         st.write("Edit **Nickname** and tick **Ignore** for senders you want removed ")
 
         mapping_df = create_nickname_mapping(
-            raw_df,
+            st.session_state.raw_df,
             st.session_state.nickname_map,
         )
 

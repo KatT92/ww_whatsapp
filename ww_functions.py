@@ -148,27 +148,6 @@ def parse_whatsapp_text(
     )
 
 
-def default_nickname_from_wa_name(name: str) -> str:
-    """
-    Default nickname before user edits:
-    - '~ First Last' -> 'First'
-    - 'First Last' -> 'First'
-    - '+447...' stays as phone number
-    """
-    if not isinstance(name, str):
-        return ""
-
-    name = name.strip()
-
-    if name.startswith("+"):
-        return name
-
-    name = name.lstrip("~").strip()
-
-    if not name:
-        return ""
-
-    return name.split()[0]
 
 
 def clean_text_for_words(text: str, remove_stopwords: bool = True) -> str:
@@ -239,6 +218,29 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 
     return df
 
+
+
+def default_nickname_from_wa_name(name: str) -> str:
+    """
+    Default nickname before user edits:
+    - '~ First Last' -> 'First'
+    - 'First Last' -> 'First'
+    - '+447...' stays as phone number
+    """
+    if not isinstance(name, str):
+        return ""
+
+    name = name.strip()
+
+    if name.startswith("+"):
+        return name
+
+    name = name.lstrip("~").strip()
+
+    if not name:
+        return ""
+
+    return name.split()[0]
 
 def create_nickname_mapping(
     df: pd.DataFrame,
@@ -335,13 +337,14 @@ def apply_nickname_mapping(
         return df
 
     if mapping_df is None or mapping_df.empty:
-        df["Nickname"] = df["WA_Name"].astype(str)
+        df["Nickname"] = df["WA_Name"].astype(str).apply(default_nickname_from_wa_name)
         return df
+
 
     mapping = mapping_df.copy()
 
     if not {"WA_Name", "Nickname"}.issubset(mapping.columns):
-        df["Nickname"] = df["WA_Name"].astype(str)
+        df["Nickname"] = df["WA_Name"].astype(str).apply(default_nickname_from_wa_name)
         return df
 
     if "Ignore" not in mapping.columns:
@@ -349,7 +352,11 @@ def apply_nickname_mapping(
 
     mapping["WA_Name"] = mapping["WA_Name"].astype(str)
     mapping["Nickname"] = mapping["Nickname"].astype(str).str.strip()
-    mapping.loc[mapping["Nickname"].eq(""), "Nickname"] = mapping["WA_Name"]
+    blank_mask = mapping["Nickname"].eq("")
+    mapping.loc[blank_mask, "Nickname"] = (
+        mapping.loc[blank_mask, "WA_Name"]
+        .apply(default_nickname_from_wa_name)
+    )
     mapping["Ignore"] = mapping["Ignore"].fillna(False).astype(bool)
 
     mapping = mapping.drop_duplicates(subset=["WA_Name"], keep="last")
@@ -360,10 +367,15 @@ def apply_nickname_mapping(
 
     lookup = dict(zip(mapping["WA_Name"], mapping["Nickname"]))
 
-    df["Nickname"] = (
-        df["WA_Name"].astype(str).map(lookup).fillna(df["WA_Name"].astype(str))
-    )
+    df["Nickname"] = df["WA_Name"].astype(str).map(lookup)
 
+    missing_mask = df["Nickname"].isna() | df["Nickname"].astype(str).str.strip().eq("")
+
+    df.loc[missing_mask, "Nickname"] = (
+        df.loc[missing_mask, "WA_Name"]
+        .astype(str)
+        .apply(default_nickname_from_wa_name)
+    )
     return df
 
 
