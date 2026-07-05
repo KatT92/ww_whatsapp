@@ -12,13 +12,17 @@ from cache import (
     source_mapping_items,
 )
 from plots import graph_selected, show_wordcloud, small_fig
-from ww_functions import (
+
+from parse_data import (
     DEFAULT_WHATSAPP_PATTERN,
     apply_nickname_mapping,
+    create_nickname_mapping,
+)
+
+from stats import (
     count_cooccurrence,
     count_phrase_mentions,
     count_word_by_player,
-    create_nickname_mapping,
     top_emojis,
     top_words,
     total_words_by_person,
