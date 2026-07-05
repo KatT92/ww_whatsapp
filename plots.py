@@ -21,9 +21,6 @@ def graph_selected(selected_graphs, graph_name: str) -> bool:
 def show_wordcloud(text: str, title: str = "Word cloud", st=None):
     """
     Render a word cloud.
-
-    Pass st=streamlit from app.py to display directly in Streamlit.
-    Returns the matplotlib figure when st is not supplied.
     """
     if not text or not text.strip():
         if st is not None:

@@ -1,11 +1,5 @@
 """
 Utility functions for the WhatsApp Streamlit dashboard.
-
-Nickname mapping is controlled only by the Streamlit data editor:
-- WA_Name is the original WhatsApp sender name
-- Nickname is the dashboard display name
-- Ignore removes that WA_Name from analysis
-
 """
 
 from __future__ import annotations
@@ -275,7 +269,7 @@ def create_nickname_mapping(
     existing = existing_mapping.copy()
 
     if not {"WA_Name", "Nickname"}.issubset(existing.columns):
-        base["Nickname"] = base["WA_Name"]
+        base["Nickname"] = base["WA_Name"].apply(default_nickname_from_wa_name)
         base["Ignore"] = False
         return base[columns]
 
