@@ -99,6 +99,19 @@ DEFAULT_STOPWORDS = {
     "not",
 }
 
+def line_is_system_message(line: str) -> bool:
+    line = str(line).lower().strip()
+
+    system_phrases = [
+        "added you to the community",
+        "added you to this group",
+        "added you to the group",
+        "joined from the community",
+        "messages and calls are end-to-end encrypted",
+        "welcome to the group",
+    ]
+
+    return any(phrase in line for phrase in system_phrases)
 
 def is_system_message(player_name: str, message: str) -> bool:
     player_name = str(player_name).lower().strip()
@@ -146,6 +159,11 @@ def parse_whatsapp_text(
 
     for raw_line in text.splitlines():
         line = raw_line.strip("\n")
+
+        if line_is_system_message(line):
+            current = None
+            continue
+
         match = compiled.match(line)
 
         if match:
