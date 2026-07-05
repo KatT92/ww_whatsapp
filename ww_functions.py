@@ -102,6 +102,31 @@ DEFAULT_STOPWORDS = {
 }
 
 
+def is_system_message(player_name: str, message: str) -> bool:
+    full_text = f"{player_name}: {message}".lower().strip()
+
+    system_patterns = [
+        r".* added you to .*",
+        r".* added .* to .*",
+        r".* created group .*",
+        r".* created this group.*",
+        r".* changed the subject .*",
+        r".* changed this group's icon.*",
+        r".* changed the group description.*",
+        r".* joined using .* invite link.*",
+        r".* joined from the community.*",
+        r".* left.*",
+        r".* was removed.*",
+        r".* removed .*",
+        r"messages and calls are end-to-end encrypted.*",
+        r"you were added.*",
+        r"you joined.*",
+        r"welcome to the group.*",
+    ]
+
+    return any(re.match(pattern, full_text) for pattern in system_patterns)
+
+
 def parse_whatsapp_text(
     text: str,
     source_name: str,
@@ -111,8 +136,9 @@ def parse_whatsapp_text(
     Parse WhatsApp exported text into a dataframe.
 
     Supports multiline messages by appending continuation lines to the previous
-    valid message. Lines that do not match the pattern before any valid message
-    are ignored.
+    valid message.
+
+    Filters out WhatsApp system messages
     """
     data = []
     current = None
@@ -128,13 +154,21 @@ def parse_whatsapp_text(
 
             date, time, player_name, message = match.groups()
 
+            player_name = str(player_name).strip()
+            message = str(message).strip()
+
+            if is_system_message(player_name, message):
+                current = None
+                continue
+
             current = {
                 "Date": date,
                 "Time": time,
-                "WA_Name": str(player_name).strip(),
-                "Text": str(message).strip(),
+                "WA_Name": player_name,
+                "Text": message,
                 "Source": source_name,
             }
+
         else:
             if current is not None and line.strip():
                 current["Text"] = f"{current['Text']}\n{line.strip()}"
@@ -146,8 +180,6 @@ def parse_whatsapp_text(
         data,
         columns=["Date", "Time", "WA_Name", "Text", "Source"],
     )
-
-
 
 
 def clean_text_for_words(text: str, remove_stopwords: bool = True) -> str:
@@ -219,7 +251,6 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-
 def default_nickname_from_wa_name(name: str) -> str:
     """
     Default nickname before user edits:
@@ -241,6 +272,7 @@ def default_nickname_from_wa_name(name: str) -> str:
         return ""
 
     return name.split()[0]
+
 
 def create_nickname_mapping(
     df: pd.DataFrame,
@@ -280,21 +312,12 @@ def create_nickname_mapping(
 
     existing["WA_Name"] = existing["WA_Name"].astype(str)
 
-    existing["Nickname"] = (
-        existing["Nickname"]
-        .fillna("")
-        .astype(str)
-        .str.strip()
-    )
+    existing["Nickname"] = existing["Nickname"].fillna("").astype(str).str.strip()
 
-    mask = (
-        existing["Nickname"].eq("")
-        | existing["Nickname"].eq(existing["WA_Name"])
-    )
+    mask = existing["Nickname"].eq("") | existing["Nickname"].eq(existing["WA_Name"])
 
-    existing.loc[mask, "Nickname"] = (
-        existing.loc[mask, "WA_Name"]
-        .apply(default_nickname_from_wa_name)
+    existing.loc[mask, "Nickname"] = existing.loc[mask, "WA_Name"].apply(
+        default_nickname_from_wa_name
     )
 
     existing["Ignore"] = existing["Ignore"].fillna(False).astype(bool)
@@ -340,7 +363,6 @@ def apply_nickname_mapping(
         df["Nickname"] = df["WA_Name"].astype(str).apply(default_nickname_from_wa_name)
         return df
 
-
     mapping = mapping_df.copy()
 
     if not {"WA_Name", "Nickname"}.issubset(mapping.columns):
@@ -353,9 +375,8 @@ def apply_nickname_mapping(
     mapping["WA_Name"] = mapping["WA_Name"].astype(str)
     mapping["Nickname"] = mapping["Nickname"].astype(str).str.strip()
     blank_mask = mapping["Nickname"].eq("")
-    mapping.loc[blank_mask, "Nickname"] = (
-        mapping.loc[blank_mask, "WA_Name"]
-        .apply(default_nickname_from_wa_name)
+    mapping.loc[blank_mask, "Nickname"] = mapping.loc[blank_mask, "WA_Name"].apply(
+        default_nickname_from_wa_name
     )
     mapping["Ignore"] = mapping["Ignore"].fillna(False).astype(bool)
 
@@ -372,9 +393,7 @@ def apply_nickname_mapping(
     missing_mask = df["Nickname"].isna() | df["Nickname"].astype(str).str.strip().eq("")
 
     df.loc[missing_mask, "Nickname"] = (
-        df.loc[missing_mask, "WA_Name"]
-        .astype(str)
-        .apply(default_nickname_from_wa_name)
+        df.loc[missing_mask, "WA_Name"].astype(str).apply(default_nickname_from_wa_name)
     )
     return df
 
