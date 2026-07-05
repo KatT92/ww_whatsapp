@@ -103,29 +103,30 @@ DEFAULT_STOPWORDS = {
 
 
 def is_system_message(player_name: str, message: str) -> bool:
-    full_text = f"{player_name}: {message}".lower().strip()
+    player_name = str(player_name).lower().strip()
+    message = str(message).lower().strip()
+    full_text = f"{player_name} {message}".strip()
 
     system_patterns = [
-        r".* added you to .*",
-        r".* added .* to .*",
-        r".* created group .*",
-        r".* created this group.*",
-        r".* changed the subject .*",
-        r".* changed this group's icon.*",
-        r".* changed the group description.*",
-        r".* joined using .* invite link.*",
-        r".* joined from the community.*",
-        r".* left.*",
-        r".* was removed.*",
-        r".* removed .*",
-        r"messages and calls are end-to-end encrypted.*",
-        r"you were added.*",
-        r"you joined.*",
-        r"welcome to the group.*",
+        r".*\badded you to (the )?(community|group)\b.*",
+        r".*\badded you\b.*",
+        r".*\bjoined from the community\b.*",
+        r".*\bcreated group\b.*",
+        r".*\bcreated this group\b.*",
+        r".*\bchanged the subject\b.*",
+        r".*\bchanged this group's icon\b.*",
+        r".*\bchanged the group description\b.*",
+        r".*\bjoined using .* invite link\b.*",
+        r".*\bleft\b.*",
+        r".*\bwas removed\b.*",
+        r".*\bremoved .*\b.*",
+        r".*\bmessages and calls are end-to-end encrypted\b.*",
+        r".*\byou were added\b.*",
+        r".*\byou joined\b.*",
+        r".*\bwelcome to the group\b.*",
     ]
 
-    return any(re.match(pattern, full_text) for pattern in system_patterns)
-
+    return any(re.search(pattern, full_text) for pattern in system_patterns)
 
 def parse_whatsapp_text(
     text: str,
@@ -153,7 +154,27 @@ def parse_whatsapp_text(
                 data.append(current)
 
             date, time, player_name, message = match.groups()
+            player_name_lower = player_name.lower()
 
+            system_name_phrases = [
+                "added you to the community",
+                "added you to this group",
+                "added you to the group",
+                "joined from the community",
+                "created group",
+                "created this group",
+                "changed the subject",
+                "changed this group's icon",
+                "changed the group description",
+                "joined using this group's invite link",
+                "messages and calls are end-to-end encrypted",
+                "welcome to the group",
+            ]
+
+            if any(phrase in player_name_lower for phrase in system_name_phrases):
+                current = None
+                continue
+            
             player_name = str(player_name).strip()
             message = str(message).strip()
 
