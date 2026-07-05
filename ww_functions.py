@@ -277,8 +277,24 @@ def create_nickname_mapping(
         existing["Ignore"] = False
 
     existing["WA_Name"] = existing["WA_Name"].astype(str)
-    existing["Nickname"] = existing["Nickname"].astype(str).str.strip()
-    existing.loc[existing["Nickname"].eq(""), "Nickname"] = existing["WA_Name"]
+
+    existing["Nickname"] = (
+        existing["Nickname"]
+        .fillna("")
+        .astype(str)
+        .str.strip()
+    )
+
+    mask = (
+        existing["Nickname"].eq("")
+        | existing["Nickname"].eq(existing["WA_Name"])
+    )
+
+    existing.loc[mask, "Nickname"] = (
+        existing.loc[mask, "WA_Name"]
+        .apply(default_nickname_from_wa_name)
+    )
+
     existing["Ignore"] = existing["Ignore"].fillna(False).astype(bool)
 
     existing = existing.drop_duplicates(subset=["WA_Name"], keep="last")
