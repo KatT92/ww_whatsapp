@@ -1,10 +1,7 @@
 """
 Utility functions for the WhatsApp Streamlit dashboard.
 
-Nickname handling is intentionally simple:
-- WhatsApp names are parsed into the WA_Name column.
-- A mapping table from Streamlit's data editor controls all replacements.
-- apply_nickname_mapping() creates/replaces the Nickname column from that table.
+
 """
 
 from __future__ import annotations
@@ -23,7 +20,9 @@ from textblob import TextBlob
 # PARSING
 # =========================================================
 
-DEFAULT_WHATSAPP_PATTERN = r"(\d{1,2}/\d{1,2}/\d{2,4}),\s(\d{1,2}:\d{2})\s-\s(.*?):\s(.*)"
+DEFAULT_WHATSAPP_PATTERN = (
+    r"(\d{1,2}/\d{1,2}/\d{2,4}),\s(\d{1,2}:\d{2})\s-\s(.*?):\s(.*)"
+)
 
 
 def parse_whatsapp_text(
@@ -115,6 +114,7 @@ def parse_whatsapp_messages(file_path, source_name, pattern=DEFAULT_WHATSAPP_PAT
 # DATA PREP
 # =========================================================
 
+
 def get_sentiment(text: str) -> float:
     """Return TextBlob sentiment polarity for a message."""
     if not isinstance(text, str) or not text.strip():
@@ -162,6 +162,7 @@ def prepare_dataframe(df: pd.DataFrame) -> pd.DataFrame:
 # NICKNAME MAPPING FROM STREAMLIT DATA EDITOR
 # =========================================================
 
+
 def create_nickname_mapping(
     df: pd.DataFrame,
     existing_mapping: Optional[pd.DataFrame] = None,
@@ -176,7 +177,9 @@ def create_nickname_mapping(
     if df.empty or "WA_Name" not in df.columns:
         return pd.DataFrame(columns=["WA_Name", "Nickname"])
 
-    base = pd.DataFrame({"WA_Name": sorted(df["WA_Name"].dropna().astype(str).unique())})
+    base = pd.DataFrame(
+        {"WA_Name": sorted(df["WA_Name"].dropna().astype(str).unique())}
+    )
 
     if existing_mapping is None or existing_mapping.empty:
         base["Nickname"] = base["WA_Name"]
@@ -233,13 +236,19 @@ def apply_nickname_mapping(df: pd.DataFrame, mapping_df: pd.DataFrame) -> pd.Dat
 # TEXT/STATS HELPERS
 # =========================================================
 
+
 def count_word_mentions(df: pd.DataFrame, word: str, text_column: str = "Text") -> int:
     """Count whole-word occurrences across all messages."""
     if not word:
         return 0
 
     pattern = re.compile(rf"\b{re.escape(word)}\b", flags=re.IGNORECASE)
-    return int(df[text_column].fillna("").apply(lambda text: len(pattern.findall(str(text)))).sum())
+    return int(
+        df[text_column]
+        .fillna("")
+        .apply(lambda text: len(pattern.findall(str(text))))
+        .sum()
+    )
 
 
 def word_mentions(df: pd.DataFrame, word: str) -> dict:
@@ -297,13 +306,20 @@ def count_cooccurrence(
     return int(df[text_column].fillna("").apply(has_both).sum())
 
 
-def count_phrase_mentions(df: pd.DataFrame, phrase: str, text_column: str = "Text") -> int:
+def count_phrase_mentions(
+    df: pd.DataFrame, phrase: str, text_column: str = "Text"
+) -> int:
     """Count exact phrase occurrences across all messages, case-insensitively."""
     if not phrase:
         return 0
 
     pattern = re.compile(re.escape(phrase), flags=re.IGNORECASE)
-    return int(df[text_column].fillna("").apply(lambda text: len(pattern.findall(str(text)))).sum())
+    return int(
+        df[text_column]
+        .fillna("")
+        .apply(lambda text: len(pattern.findall(str(text))))
+        .sum()
+    )
 
 
 def count_word_by_player(df: pd.DataFrame, nickname: str, target_word: str) -> int:
