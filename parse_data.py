@@ -125,16 +125,15 @@ SYSTEM_MESSAGE_PHRASES = [
     "left",
 ]
 
+
 def is_system_message(*parts: str) -> bool:
     """
     Returns True if any supplied text contains a WhatsApp system message.
     """
     text = " ".join(str(p).lower() for p in parts)
 
-    return any(
-        phrase in text
-        for phrase in SYSTEM_MESSAGE_PHRASES
-    )
+    return any(phrase in text for phrase in SYSTEM_MESSAGE_PHRASES)
+
 
 def parse_whatsapp_text(
     text: str,
@@ -408,4 +407,3 @@ def apply_nickname_mapping(
         df.loc[missing_mask, "WA_Name"].astype(str).apply(default_nickname_from_wa_name)
     )
     return df
-

@@ -1,5 +1,6 @@
 """
 Cache and chat-loading helpers for the WhatsApp Streamlit dashboard.
+
 The permanent cache stores original uploaded .txt files plus metadata.
 Processed dataframes are rebuilt from the original txt files when loaded.
 """
@@ -54,12 +55,11 @@ def save_uploaded_txt_cache(
     This deliberately does not save the processed dataframe.
     Cached chat sets are re-parsed from the original text files when loaded.
     """
-    safe_name = safe_cache_name(cache_name)
-    cache_path = CACHE_DIR / safe_name
-
     base_name = safe_cache_name(cache_name)
+    cache_path = CACHE_DIR / base_name
+
     safe_name = base_name
-    cache_path = CACHE_DIR / safe_name
+
 
     counter = 2
     while cache_path.exists():

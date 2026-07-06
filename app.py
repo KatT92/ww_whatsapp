@@ -2,15 +2,16 @@ import json
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+
 from cache import (
     delete_cached_chat_set,
     list_cached_chat_sets,
     load_cached_txt_cache,
-    load_chats_from_bytes,
+    load_chats_from_bytes as load_chats_from_bytes_uncached,
     save_uploaded_txt_cache,
     source_mapping_items,
 )
-from plots import graph_selected, show_wordcloud, small_fig
+
 from parse_data import (
     DEFAULT_WHATSAPP_PATTERN,
     BRACKETED_WHATSAPP_PATTERN,
@@ -27,7 +28,24 @@ from stats import (
     top_words,
     total_words_by_person,
     word_mentions,
+    general_summary_stats,
+    longest_messages,
+    ngrams,
+    most_active_hour_all_players,
+    most_active_day_all_players,
+    messages_between_players,
+    messages_between_players_by_day,
+    sentiment_from_player_to_player_by_day,
+    sentiment_about_player_from_all,
+    sentiment_from_player_to_all,
+    plot_normalised_mention_heatmap,
+    plot_most_active_hour_by_player,
+    plot_most_active_day_by_player,
+    cumulative_messages_over_time,
+    word_frequency_over_time,
 )
+
+from plots import show_wordcloud, small_fig, graph_selected
 
 
 CACHE_DIR = Path("cached_chat_uploads")
@@ -69,13 +87,7 @@ def cached_load_chats_from_bytes(
     source_mapping_items_: tuple[tuple[str, str], ...],
     pattern: str,
 ) -> pd.DataFrame:
-    """
-    Streamlit-cached wrapper.
-
-    Permanent cache is handled by cache.py and stores original .txt uploads.
-    This cache only speeds up Streamlit reruns.
-    """
-    return load_chats_from_bytes(
+    return load_chats_from_bytes_uncached(
         file_data=file_data,
         source_mapping_items=source_mapping_items_,
         pattern=pattern,
@@ -140,7 +152,7 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs(
         "1. Upload chats",
         "2. Name mapping",
         "3. General graphs",
-        "4. Person graphs",
+        "4. Per Person graphs",
         "5. Specific stats",
     ]
 )
@@ -416,8 +428,11 @@ with tab3:
     if df.empty:
         st.info("Upload or load chats first.")
     else:
-        filtered_df = get_filtered_df(df, key_prefix="general")
+        # Chat dropdown filter: this filters rows/messages only.
+        # It is not the stopword filter.
+        chat_df = get_filtered_df(df, key_prefix="general")
 
+        # Stopword toggle: this only chooses the text column for word-based outputs.
         remove_stopwords = st.toggle(
             "Remove stopwords for word-based graphs",
             value=True,
@@ -425,19 +440,25 @@ with tab3:
         )
 
         word_text_column = choose_word_text_column(
-            filtered_df,
+            chat_df,
             remove_stopwords=remove_stopwords,
         )
 
         graph_options = [
+            "Summary stats",
             "Messages by person",
             "Messages by hour",
             "Messages over time",
             "Average sentiment by person",
             "Total words by person",
+            "Longest messages",
             "Top words",
+            "Top bigrams",
+            "Top trigrams",
             "Top emojis",
             "Word cloud",
+            "Most active hour by player",
+            "Most active day by player",
             "View all",
         ]
 
@@ -449,10 +470,21 @@ with tab3:
         )
 
         c1, c2, c3, c4 = st.columns(4)
-        c1.metric("Messages", f"{len(filtered_df):,}")
-        c2.metric("People", filtered_df["Nickname"].nunique())
-        c3.metric("Chats", filtered_df["Source"].nunique())
-        c4.metric("Days", filtered_df["DateOnly"].nunique())
+        c1.metric("Messages", f"{len(chat_df):,}")
+        c2.metric("People", chat_df["Nickname"].nunique())
+        c3.metric("Chats", chat_df["Source"].nunique())
+        c4.metric("Days", chat_df["DateOnly"].nunique())
+
+        if graph_selected(selected_graphs, "Summary stats"):
+            st.subheader("Summary stats")
+            st.caption(
+                "Uses the selected chat rows. Word totals use original Text where full text matters."
+            )
+            st.dataframe(
+                general_summary_stats(chat_df),
+                width="stretch",
+                hide_index=True,
+            )
 
         left, right = st.columns(2)
 
@@ -461,7 +493,7 @@ with tab3:
                 st.subheader("Messages by person")
                 fig, ax = small_fig()
                 (
-                    filtered_df["Nickname"]
+                    chat_df["Nickname"]
                     .value_counts()
                     .head(15)
                     .sort_values()
@@ -476,7 +508,7 @@ with tab3:
                 st.subheader("Messages by hour")
                 fig, ax = small_fig()
                 (
-                    filtered_df.groupby("Hour")
+                    chat_df.groupby("Hour")
                     .size()
                     .reindex(range(24), fill_value=0)
                     .plot(ax=ax)
@@ -488,16 +520,25 @@ with tab3:
         if graph_selected(selected_graphs, "Messages over time"):
             st.subheader("Messages over time")
             fig, ax = small_fig(7, 3)
-            filtered_df.groupby("DateOnly").size().plot(ax=ax)
+            chat_df.groupby("DateOnly").size().plot(ax=ax)
             ax.set_xlabel("Date")
             ax.set_ylabel("Messages")
             st.pyplot(fig, width="content")
+
+        if graph_selected(selected_graphs, "Word cloud"):
+            st.subheader("Word cloud")
+            st.caption(f"Using text column: {word_text_column}")
+            show_wordcloud(
+                " ".join(chat_df[word_text_column].fillna("").astype(str)),
+                "Overall word cloud",
+                st=st,
+            )
 
         if graph_selected(selected_graphs, "Average sentiment by person"):
             st.subheader("Average sentiment by person")
             fig, ax = small_fig(7, 3)
             (
-                filtered_df.groupby("Nickname")["Sentiment"]
+                chat_df.groupby("Nickname")["Sentiment"]
                 .mean()
                 .sort_values()
                 .tail(20)
@@ -512,34 +553,130 @@ with tab3:
             st.caption(
                 "Uses original Text, not FilteredText, because all words matter here."
             )
-            total_word_df = total_words_by_person(filtered_df, text_column="Text")
+            total_word_df = total_words_by_person(chat_df, text_column="Text")
             st.dataframe(total_word_df, width="stretch", hide_index=True)
+
+        if graph_selected(selected_graphs, "Longest messages"):
+            st.subheader("Longest messages")
+            st.caption(
+                "Uses original Text, because message length should include all words."
+            )
+            st.dataframe(
+                longest_messages(chat_df, n=10, text_column="Text"),
+                width="stretch",
+                hide_index=True,
+            )
 
         if graph_selected(selected_graphs, "Top words"):
             st.subheader("Top words")
             st.caption(f"Using text column: {word_text_column}")
             st.dataframe(
-                top_words(filtered_df, n=30, text_column=word_text_column),
+                top_words(chat_df, n=30, text_column=word_text_column),
+                width="stretch",
+                hide_index=True,
+            )
+
+        if graph_selected(selected_graphs, "Top bigrams"):
+            st.subheader("Top bigrams")
+            st.caption(f"Using text column: {word_text_column}")
+            st.dataframe(
+                ngrams(chat_df, ngram_size=2, top_n=30, text_column=word_text_column),
+                width="stretch",
+                hide_index=True,
+            )
+
+        if graph_selected(selected_graphs, "Top trigrams"):
+            st.subheader("Top trigrams")
+            st.caption(f"Using text column: {word_text_column}")
+            st.dataframe(
+                ngrams(chat_df, ngram_size=3, top_n=30, text_column=word_text_column),
                 width="stretch",
                 hide_index=True,
             )
 
         if graph_selected(selected_graphs, "Top emojis"):
             st.subheader("Top emojis")
+            st.caption("Uses original Text, because emojis are not words/stopwords.")
             st.dataframe(
-                top_emojis(filtered_df, n=30, text_column="Text"),
+                top_emojis(chat_df, n=30, text_column="Text"),
                 width="stretch",
                 hide_index=True,
             )
 
-        if graph_selected(selected_graphs, "Word cloud"):
-            st.subheader("Word cloud")
-            st.caption(f"Using text column: {word_text_column}")
-            show_wordcloud(
-                " ".join(filtered_df[word_text_column].fillna("").astype(str)),
-                "Overall word cloud",
-                st=st,
+        if graph_selected(selected_graphs, "Most active hour by player"):
+            st.subheader("Most active hour by player")
+
+            active_hour_df = most_active_hour_all_players(chat_df)
+
+            if not active_hour_df.empty:
+                fig, ax = small_fig(7, 3)
+
+                active_hour_df.sort_values("Messages").plot.barh(
+                    x="Nickname",
+                    y="Messages",
+                    ax=ax,
+                    legend=False,
+                )
+
+                ax.set_xlabel("Messages at most active hour")
+                ax.set_ylabel("Player")
+                ax.set_title("Most active hour by player")
+
+                st.pyplot(fig, width="content")
+
+        if graph_selected(selected_graphs, "Most active day by player"):
+            st.subheader("Most active day by player")
+
+            active_day_df = most_active_day_all_players(chat_df)
+
+            if not active_day_df.empty:
+                fig, ax = small_fig(7, 3)
+
+                active_day_df.sort_values("Messages").plot.barh(
+                    x="Nickname",
+                    y="Messages",
+                    ax=ax,
+                    legend=False,
+                )
+
+                ax.set_xlabel("Messages on most active day")
+                ax.set_ylabel("Player")
+                ax.set_title("Most active day by player")
+
+                st.pyplot(fig, width="content")
+
+                fig, ax, active_day_df = plot_most_active_day_by_player(
+                    chat_df,
+                    min_messages=5,
+                )
+
+                st.pyplot(fig, width="content")
+
+        if graph_selected(selected_graphs, "Most active hour by player"):
+            st.subheader("Most active hour by player")
+
+            fig, ax, active_df = plot_most_active_hour_by_player(
+                chat_df,
+                min_messages=5,
             )
+
+            st.pyplot(fig, width="content")
+
+            st.dataframe(
+                active_df,
+                width="stretch",
+                hide_index=True,
+            )
+
+        if graph_selected(selected_graphs, "Normalised mention heatmap"):
+            st.subheader("Special graph for Louis")
+
+            fig, ax, matrix_df = plot_normalised_mention_heatmap(
+                chat_df,
+                st.session_state.nickname_map,
+            )
+
+            st.pyplot(fig, width="content")
 
 
 # =========================================================
@@ -554,7 +691,7 @@ with tab4:
     if df.empty:
         st.info("Upload or load chats first.")
     else:
-        filtered_df = get_filtered_df(df, key_prefix="person_graphs")
+        chat_df = get_filtered_df(df, key_prefix="person_graphs")
 
         remove_stopwords = st.toggle(
             "Remove stopwords for word-based graphs",
@@ -563,125 +700,510 @@ with tab4:
         )
 
         word_text_column = choose_word_text_column(
-            filtered_df,
+            chat_df,
             remove_stopwords=remove_stopwords,
         )
 
-        people = sorted(filtered_df["Nickname"].dropna().astype(str).unique())
+        people = sorted(chat_df["Nickname"].dropna().astype(str).unique())
 
         if not people:
             st.info("No people available after filtering.")
         else:
-            selected_person = st.selectbox(
-                "Choose a person",
+            selected_people = st.multiselect(
+                "Choose one or two people",
                 people,
-                key="person_graph_person_selector",
+                default=people[:1],
+                max_selections=2,
+                key="person_graph_people_selector",
             )
 
-            person_df = filtered_df[
-                filtered_df["Nickname"].astype(str) == selected_person
-            ].copy()
+            if not selected_people:
+                st.info("Select at least one person.")
+            else:
+                person_df = chat_df[
+                    chat_df["Nickname"].astype(str).isin(selected_people)
+                ].copy()
 
-            person_graph_options = [
-                "Messages by hour",
-                "Messages over time",
-                "Sentiment over time",
-                "Total words",
-                "Top words",
-                "Top emojis",
-                "Word cloud",
-                "View all",
-            ]
+                person_graph_options = [
+                    "Messages by hour",
+                    "Messages over time",
+                    "Cumulative messages over time",
+                    "Sentiment over time",
+                    "Total words",
+                    "Top words",
+                    "Top bigrams",
+                    "Top trigrams",
+                    "Top emojis",
+                    "Word cloud",
+                    "Messages between players",
+                    "Messages between selected players by day",
+                    "Sentiment from one to the other by day",
+                    "Sentiment about selected player from all",
+                    "Sentiment from selected player to others",
+                    "View all",
+                ]
+                selected_person_graphs = st.multiselect(
+                    "Choose graph(s) to view",
+                    person_graph_options,
+                    default=["Messages by hour"],
+                    key="person_graph_selector",
+                )
 
-            selected_person_graphs = st.multiselect(
-                "Choose graph(s) to view",
-                person_graph_options,
-                default=["Messages by hour"],
-                key="person_graph_selector",
-            )
-
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Messages", f"{len(person_df):,}")
-            c2.metric(
-                "Average sentiment",
-                round(person_df["Sentiment"].mean(), 3) if len(person_df) else 0,
-            )
-            c3.metric("Active days", person_df["DateOnly"].nunique())
-
-            left, right = st.columns(2)
-
-            if graph_selected(selected_person_graphs, "Messages by hour"):
-                with left:
-                    st.subheader("Messages by hour")
-                    fig, ax = small_fig()
-                    (
-                        person_df.groupby("Hour")
-                        .size()
-                        .reindex(range(24), fill_value=0)
-                        .plot(ax=ax)
+                summary = (
+                    person_df.groupby("Nickname")
+                    .agg(
+                        Messages=("Text", "count"),
+                        Avg_Sentiment=("Sentiment", "mean"),
+                        Active_Days=("DateOnly", "nunique"),
                     )
+                    .reset_index()
+                )
+                summary["Avg_Sentiment"] = summary["Avg_Sentiment"].round(3)
+
+                st.subheader("Selected player summary")
+                st.dataframe(summary, width="stretch", hide_index=True)
+
+                if graph_selected(selected_person_graphs, "Messages by hour"):
+                    st.subheader("Messages by hour")
+
+                    hourly = (
+                        person_df.groupby(["Hour", "Nickname"])
+                        .size()
+                        .reset_index(name="Messages")
+                    )
+
+                    pivot = (
+                        hourly.pivot(
+                            index="Hour",
+                            columns="Nickname",
+                            values="Messages",
+                        )
+                        .reindex(range(24), fill_value=0)
+                        .fillna(0)
+                    )
+
+                    fig, ax = small_fig(7, 3)
+                    pivot.plot(ax=ax)
                     ax.set_xlabel("Hour")
                     ax.set_ylabel("Messages")
                     st.pyplot(fig, width="content")
 
-            if graph_selected(selected_person_graphs, "Messages over time"):
-                with right:
+                if graph_selected(selected_person_graphs, "Messages over time"):
                     st.subheader("Messages over time")
-                    fig, ax = small_fig()
-                    person_df.groupby("DateOnly").size().plot(ax=ax)
+
+                    daily = (
+                        person_df.groupby(["DateOnly", "Nickname"])
+                        .size()
+                        .reset_index(name="Messages")
+                    )
+
+                    pivot = daily.pivot(
+                        index="DateOnly",
+                        columns="Nickname",
+                        values="Messages",
+                    ).fillna(0)
+
+                    fig, ax = small_fig(7, 3)
+                    pivot.plot(ax=ax)
                     ax.set_xlabel("Date")
                     ax.set_ylabel("Messages")
                     st.pyplot(fig, width="content")
 
-            if graph_selected(selected_person_graphs, "Sentiment over time"):
-                st.subheader("Sentiment over time")
-                fig, ax = small_fig(7, 3)
-                person_df.groupby("DateOnly")["Sentiment"].mean().plot(ax=ax)
-                ax.set_xlabel("Date")
-                ax.set_ylabel("Average sentiment")
-                st.pyplot(fig, width="content")
+                if graph_selected(
+                    selected_person_graphs, "Cumulative messages over time"
+                ):
+                    st.subheader("Cumulative messages over time")
 
-            if graph_selected(selected_person_graphs, "Total words"):
-                st.subheader("Total words")
-                st.caption(
-                    "Uses original Text, not FilteredText, because all words matter here."
-                )
-                total_word_count = int(
-                    person_df["Text"]
-                    .fillna("")
-                    .astype(str)
-                    .str.split()
-                    .apply(len)
-                    .sum()
-                )
-                st.metric("Total words", f"{total_word_count:,}")
+                    cumulative_df = cumulative_messages_over_time(person_df)
 
-            if graph_selected(selected_person_graphs, "Top words"):
-                st.subheader("Top words")
-                st.caption(f"Using text column: {word_text_column}")
-                st.dataframe(
-                    top_words(person_df, n=30, text_column=word_text_column),
-                    width="stretch",
-                    hide_index=True,
-                )
+                    if cumulative_df.empty:
+                        st.info("No cumulative message data available.")
+                    else:
+                        pivot = (
+                            cumulative_df.pivot(
+                                index="DateOnly",
+                                columns="Nickname",
+                                values="Cumulative Messages",
+                            )
+                            .fillna(method="ffill")
+                            .fillna(0)
+                        )
 
-            if graph_selected(selected_person_graphs, "Top emojis"):
-                st.subheader("Top emojis")
-                st.dataframe(
-                    top_emojis(person_df, n=30, text_column="Text"),
-                    width="stretch",
-                    hide_index=True,
-                )
+                        fig, ax = small_fig(7, 3)
 
-            if graph_selected(selected_person_graphs, "Word cloud"):
-                st.subheader("Word cloud")
-                st.caption(f"Using text column: {word_text_column}")
-                show_wordcloud(
-                    " ".join(person_df[word_text_column].fillna("").astype(str)),
-                    f"Word cloud for {selected_person}",
-                    st=st,
-                )
+                        pivot.plot(ax=ax)
 
+                        ax.set_xlabel("Date")
+                        ax.set_ylabel("Cumulative messages")
+
+                        st.pyplot(fig, width="content")
+
+                        st.dataframe(
+                            cumulative_df,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if graph_selected(selected_person_graphs, "Sentiment over time"):
+                    st.subheader("Sentiment over time")
+
+                    sentiment = (
+                        person_df.groupby(["DateOnly", "Nickname"])["Sentiment"]
+                        .mean()
+                        .reset_index()
+                    )
+
+                    pivot = sentiment.pivot(
+                        index="DateOnly",
+                        columns="Nickname",
+                        values="Sentiment",
+                    )
+
+                    fig, ax = small_fig(7, 3)
+                    pivot.plot(ax=ax)
+                    ax.set_xlabel("Date")
+                    ax.set_ylabel("Average sentiment")
+                    st.pyplot(fig, width="content")
+
+                if graph_selected(selected_person_graphs, "Total words"):
+                    st.subheader("Total words")
+                    st.caption(
+                        "Uses original Text, not FilteredText, because all words matter here."
+                    )
+
+                    total_words = (
+                        person_df.assign(
+                            WordCount=person_df["Text"]
+                            .fillna("")
+                            .astype(str)
+                            .str.split()
+                            .apply(len)
+                        )
+                        .groupby("Nickname")["WordCount"]
+                        .sum()
+                        .sort_values(ascending=False)
+                        .reset_index()
+                    )
+
+                    total_words.columns = ["Nickname", "Total words"]
+                    st.dataframe(total_words, width="stretch", hide_index=True)
+
+                if graph_selected(selected_person_graphs, "Top words"):
+                    st.subheader("Top words")
+                    st.caption(f"Using text column: {word_text_column}")
+
+                    for person in selected_people:
+                        st.markdown(f"**{person}**")
+                        this_person_df = person_df[
+                            person_df["Nickname"].astype(str) == person
+                        ]
+
+                        st.dataframe(
+                            top_words(
+                                this_person_df,
+                                n=30,
+                                text_column=word_text_column,
+                            ),
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if graph_selected(selected_person_graphs, "Top emojis"):
+                    st.subheader("Top emojis")
+                    st.caption(
+                        "Uses original Text, because emojis are not words/stopwords."
+                    )
+
+                    for person in selected_people:
+                        st.markdown(f"**{person}**")
+                        this_person_df = person_df[
+                            person_df["Nickname"].astype(str) == person
+                        ]
+
+                        st.dataframe(
+                            top_emojis(
+                                this_person_df,
+                                n=30,
+                                text_column="Text",
+                            ),
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if graph_selected(selected_person_graphs, "Word cloud"):
+                    st.subheader("Word cloud")
+                    st.caption(f"Using text column: {word_text_column}")
+
+                    for person in selected_people:
+                        this_person_df = person_df[
+                            person_df["Nickname"].astype(str) == person
+                        ]
+
+                        show_wordcloud(
+                            " ".join(
+                                this_person_df[word_text_column].fillna("").astype(str)
+                            ),
+                            f"Word cloud for {person}",
+                            st=st,
+                        )
+
+                if graph_selected(selected_person_graphs, "Top bigrams"):
+                    st.subheader("Top bigrams")
+                    st.caption(f"Using text column: {word_text_column}")
+
+                    for person in selected_people:
+                        st.markdown(f"**{person}**")
+
+                        this_person_df = person_df[
+                            person_df["Nickname"].astype(str) == person
+                        ]
+
+                        st.dataframe(
+                            ngrams(
+                                this_person_df,
+                                ngram_size=2,
+                                top_n=30,
+                                text_column=word_text_column,
+                            ),
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if graph_selected(selected_person_graphs, "Top trigrams"):
+                    st.subheader("Top trigrams")
+                    st.caption(f"Using text column: {word_text_column}")
+
+                    for person in selected_people:
+                        st.markdown(f"**{person}**")
+
+                        this_person_df = person_df[
+                            person_df["Nickname"].astype(str) == person
+                        ]
+
+                        st.dataframe(
+                            ngrams(
+                                this_person_df,
+                                ngram_size=3,
+                                top_n=30,
+                                text_column=word_text_column,
+                            ),
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if len(selected_people) == 2 and graph_selected(
+                    selected_person_graphs, "Messages between players"
+                ):
+                    st.subheader("Messages between players")
+
+                    player_a, player_b = selected_people
+
+                    interaction_df = messages_between_players(
+                        chat_df,
+                        player_a,
+                        player_b,
+                        text_column="Text",
+                    )
+
+                    if interaction_df.empty:
+                        st.info("No messages found between these players.")
+                    else:
+                        st.dataframe(
+                            interaction_df,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                        fig, ax = small_fig(6, 3)
+
+                        interaction_df.plot.bar(
+                            x="Direction",
+                            y="Messages",
+                            ax=ax,
+                            legend=False,
+                        )
+
+                        ax.set_xlabel("Direction")
+                        ax.set_ylabel("Messages")
+                        ax.set_title("Messages between players")
+
+                        st.pyplot(fig, width="content")
+
+                if len(selected_people) == 2 and graph_selected(
+                    selected_person_graphs,
+                    "Messages between selected players by day",
+                ):
+                    st.subheader("Messages between selected players by day")
+
+                    player_a, player_b = selected_people
+
+                    messages = messages_between_players_by_day(
+                        chat_df,
+                        player_a,
+                        player_b,
+                        st.session_state.nickname_map,
+                        text_column="Text",
+                    )
+
+                    if messages.empty:
+                        st.info("No messages found between these players.")
+                    else:
+                        pivot = messages.pivot(
+                            index="DateOnly",
+                            columns="Direction",
+                            values="Messages",
+                        ).fillna(0)
+
+                        fig, ax = small_fig(7, 3)
+                        pivot.plot(ax=ax)
+                        ax.set_xlabel("Date")
+                        ax.set_ylabel("Messages mentioning player")
+                        st.pyplot(fig, width="content")
+
+                        st.dataframe(
+                            messages,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if len(selected_people) == 2 and graph_selected(
+                    selected_person_graphs,
+                    "Sentiment from one to the other by day",
+                ):
+                    st.subheader("Sentiment from one player to the other by day")
+
+                    player_a, player_b = selected_people
+
+                    direction = st.radio(
+                        "Direction",
+                        [
+                            f"{player_a} → {player_b}",
+                            f"{player_b} → {player_a}",
+                        ],
+                        horizontal=True,
+                        key="sentiment_direction_selector",
+                    )
+
+                    if direction == f"{player_a} → {player_b}":
+                        from_player, to_player = player_a, player_b
+                    else:
+                        from_player, to_player = player_b, player_a
+
+                    daily_sentiment = sentiment_from_player_to_player_by_day(
+                        chat_df,
+                        from_player,
+                        to_player,
+                        st.session_state.nickname_map,
+                        text_column="Text",
+                    )
+
+                    if daily_sentiment.empty:
+                        st.info("No messages found in that direction.")
+                    else:
+                        fig, ax = small_fig(7, 3)
+
+                        daily_sentiment.plot(
+                            x="DateOnly",
+                            y="Average Sentiment",
+                            ax=ax,
+                            legend=False,
+                        )
+
+                        ax.set_xlabel("Date")
+                        ax.set_ylabel("Average sentiment")
+                        st.pyplot(fig, width="content")
+
+                        st.dataframe(
+                            daily_sentiment,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if graph_selected(
+                    selected_person_graphs,
+                    "Sentiment about selected player from all",
+                ):
+                    st.subheader(
+                        "Average sentiment about selected player from all players"
+                    )
+
+                    target_player = st.selectbox(
+                        "Target player",
+                        selected_people,
+                        key="target_player_sentiment_from_all",
+                    )
+
+                    about_df = sentiment_about_player_from_all(
+                        chat_df,
+                        target_player,
+                        st.session_state.nickname_map,
+                        text_column="Text",
+                    )
+
+                    if about_df.empty:
+                        st.info("No messages mentioning this player.")
+                    else:
+                        fig, ax = small_fig(7, 3)
+
+                        about_df.sort_values("Average Sentiment").plot.barh(
+                            x="From",
+                            y="Average Sentiment",
+                            ax=ax,
+                            legend=False,
+                        )
+
+                        ax.set_xlabel("Average sentiment")
+                        ax.set_ylabel("From")
+                        st.pyplot(fig, width="content")
+
+                        st.dataframe(
+                            about_df,
+                            width="stretch",
+                            hide_index=True,
+                        )
+
+                if graph_selected(
+                    selected_person_graphs,
+                    "Sentiment from selected player to others",
+                ):
+                    st.subheader(
+                        "Average sentiment from selected player towards others"
+                    )
+
+                    from_player = st.selectbox(
+                        "From player",
+                        selected_people,
+                        key="from_player_sentiment_to_others",
+                    )
+
+                    towards_df = sentiment_from_player_to_all(
+                        chat_df,
+                        from_player,
+                        st.session_state.nickname_map,
+                        text_column="Text",
+                    )
+
+                    if towards_df.empty:
+                        st.info("No messages found from this player mentioning others.")
+                    else:
+                        fig, ax = small_fig(7, 3)
+
+                        towards_df.sort_values("Average Sentiment").plot.barh(
+                            x="To",
+                            y="Average Sentiment",
+                            ax=ax,
+                            legend=False,
+                        )
+
+                        ax.set_xlabel("Average sentiment")
+                        ax.set_ylabel("To")
+                        st.pyplot(fig, width="content")
+
+                        st.dataframe(
+                            towards_df,
+                            width="stretch",
+                            hide_index=True,
+                        )
 
 # =========================================================
 # TAB 5 — SPECIFIC STATS
@@ -695,7 +1217,7 @@ with tab5:
     if df.empty:
         st.info("Upload or load chats first.")
     else:
-        filtered_df = get_filtered_df(df, key_prefix="specific_stats")
+        chat_df = get_filtered_df(df, key_prefix="specific_stats")
 
         remove_stopwords = st.toggle(
             "Remove stopwords for word-based stats",
@@ -708,7 +1230,7 @@ with tab5:
         )
 
         stat_text_column = choose_word_text_column(
-            filtered_df,
+            chat_df,
             remove_stopwords=remove_stopwords,
         )
 
@@ -735,7 +1257,7 @@ with tab5:
                 key="count_cooccurrence_button",
             ):
                 count = count_cooccurrence(
-                    filtered_df,
+                    chat_df,
                     word1,
                     word2,
                     text_column=stat_text_column,
@@ -750,7 +1272,7 @@ with tab5:
 
             if st.button("Analyse word", key="analyse_word_button"):
                 result = word_mentions(
-                    filtered_df,
+                    chat_df,
                     target_word,
                     text_column=stat_text_column,
                 )
@@ -767,7 +1289,7 @@ with tab5:
                 )
 
         with st.expander("How many times did one person use a word?"):
-            people = sorted(filtered_df["Nickname"].dropna().astype(str).unique())
+            people = sorted(chat_df["Nickname"].dropna().astype(str).unique())
 
             if people:
                 selected_person = st.selectbox(
@@ -786,7 +1308,7 @@ with tab5:
                     key="count_person_word_button",
                 ):
                     count = count_word_by_player(
-                        filtered_df,
+                        chat_df,
                         selected_person,
                         selected_word,
                         text_column=stat_text_column,
@@ -804,8 +1326,46 @@ with tab5:
 
             if st.button("Count phrase", key="count_phrase_button"):
                 count = count_phrase_mentions(
-                    filtered_df,
+                    chat_df,
                     phrase,
                     text_column=stat_text_column,
                 )
                 st.metric("Phrase mentions", count)
+
+        with st.expander("Word frequency over time", expanded=True):
+            words_input = st.text_input(
+                "Word or words to track",
+                help="Enter one or more words separated by commas, e.g. wolf, burn, vote",
+                key="word_frequency_over_time_input",
+            )
+
+            if st.button(
+                "Show word frequency over time", key="word_frequency_over_time_button"
+            ):
+                words = [
+                    word.strip() for word in words_input.split(",") if word.strip()
+                ]
+
+                freq_df = word_frequency_over_time(
+                    chat_df,
+                    words,
+                    text_column=stat_text_column,
+                )
+
+                if freq_df.empty:
+                    st.info("No word frequency data found.")
+                else:
+                    pivot = freq_df.pivot(
+                        index="DateOnly",
+                        columns="Word",
+                        values="Count",
+                    ).fillna(0)
+
+                    fig, ax = small_fig(7, 3)
+
+                    pivot.plot(ax=ax)
+
+                    ax.set_xlabel("Date")
+                    ax.set_ylabel("Word count")
+
+                    st.pyplot(fig, width="content")
