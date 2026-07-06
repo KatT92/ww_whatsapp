@@ -15,6 +15,8 @@ from plots import graph_selected, show_wordcloud, small_fig
 
 from parse_data import (
     DEFAULT_WHATSAPP_PATTERN,
+    BRACKETED_WHATSAPP_PATTERN,
+    WHATSAPP_PATTERNS,
     apply_nickname_mapping,
     create_nickname_mapping,
 )
@@ -278,22 +280,35 @@ with tab1:
     st.divider()
 
     with st.expander("Advanced settings", expanded=False):
-        st.text_input(
-            "WhatsApp message regex pattern",
-            value=st.session_state.get(
-                "upload_regex_pattern",
-                DEFAULT_WHATSAPP_PATTERN,
-            ),
-            help="Only change this if your WhatsApp export format is different.",
-            key="upload_regex_pattern",
+        pattern_choice = st.selectbox(
+            "WhatsApp export format",
+            list(WHATSAPP_PATTERNS.keys()),
+            index=0,
+            key="pattern_choice",
         )
+
+        if pattern_choice == "Custom pattern":
+            pattern = st.text_input(
+                "Custom WhatsApp regex pattern",
+                value=st.session_state.get(
+                    "custom_upload_regex_pattern",
+                    DEFAULT_WHATSAPP_PATTERN,
+                ),
+                help="Must return four groups: Date, Time, WA_Name, Text.",
+                key="custom_upload_regex_pattern",
+            )
+        else:
+            pattern = WHATSAPP_PATTERNS[pattern_choice]
+
+            st.code(pattern, language="python")
+
+        st.session_state["upload_regex_pattern"] = pattern
 
         st.text_input(
             "Save uploaded chat set as",
             value=st.session_state.get("cache_name_input", "my_chat_analysis"),
             key="cache_name_input",
         )
-
 
 # =========================================================
 # TAB 2 — NAME MAPPING

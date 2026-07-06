@@ -11,6 +11,13 @@ import pandas as pd
 
 DEFAULT_WHATSAPP_PATTERN = r"(\d{2}/\d{2}/\d{4}), (\d{2}:\d{2}) - (.*?): (.*)"
 
+BRACKETED_WHATSAPP_PATTERN = r"\[(\d{2}/\d{2}/\d{4}), (\d{2}:\d{2}:\d{2})\] (.*?): (.*)"
+
+WHATSAPP_PATTERNS = {
+    "Pattern 1 - Default WhatsApp": DEFAULT_WHATSAPP_PATTERN,
+    "Pattern 2 - Bracketed WhatsApp with seconds": BRACKETED_WHATSAPP_PATTERN,
+    "Custom pattern": None,
+}
 
 DEFAULT_STOPWORDS = {
     "a",
@@ -99,46 +106,35 @@ DEFAULT_STOPWORDS = {
     "not",
 }
 
-def line_is_system_message(line: str) -> bool:
-    line = str(line).lower().strip()
+SYSTEM_MESSAGE_PHRASES = [
+    "added you to",
+    "joined from the community",
+    "created group",
+    "created this group",
+    "changed the subject",
+    "changed this group's icon",
+    "changed the group description",
+    "joined using",
+    "invite link",
+    "messages and calls are end-to-end encrypted",
+    "welcome to the group",
+    "you were added",
+    "you joined",
+    "removed",
+    "was removed",
+    "left",
+]
 
-    system_phrases = [
-        "added you to the community",
-        "added you to this group",
-        "added you to the group",
-        "joined from the community",
-        "messages and calls are end-to-end encrypted",
-        "welcome to the group",
-    ]
+def is_system_message(*parts: str) -> bool:
+    """
+    Returns True if any supplied text contains a WhatsApp system message.
+    """
+    text = " ".join(str(p).lower() for p in parts)
 
-    return any(phrase in line for phrase in system_phrases)
-
-def is_system_message(player_name: str, message: str) -> bool:
-    player_name = str(player_name).lower().strip()
-    message = str(message).lower().strip()
-    full_text = f"{player_name} {message}".strip()
-
-    system_patterns = [
-        r".*\badded you to (the )?(community|group)\b.*",
-        r".*\badded you\b.*",
-        r".*\bjoined from the community\b.*",
-        r".*\bcreated group\b.*",
-        r".*\bcreated this group\b.*",
-        r".*\bchanged the subject\b.*",
-        r".*\bchanged this group's icon\b.*",
-        r".*\bchanged the group description\b.*",
-        r".*\bjoined using .* invite link\b.*",
-        r".*\bleft\b.*",
-        r".*\bwas removed\b.*",
-        r".*\bremoved .*\b.*",
-        r".*\bmessages and calls are end-to-end encrypted\b.*",
-        r".*\byou were added\b.*",
-        r".*\byou joined\b.*",
-        r".*\bwelcome to the group\b.*",
-    ]
-
-    return any(re.search(pattern, full_text) for pattern in system_patterns)
-
+    return any(
+        phrase in text
+        for phrase in SYSTEM_MESSAGE_PHRASES
+    )
 
 def parse_whatsapp_text(
     text: str,
@@ -158,10 +154,9 @@ def parse_whatsapp_text(
     compiled = re.compile(pattern)
 
     for raw_line in text.splitlines():
-        line = raw_line.strip("\n")
+        line = raw_line.strip()
 
-        if line_is_system_message(line):
-            current = None
+        if is_system_message(line):
             continue
 
         match = compiled.match(line)
@@ -171,26 +166,6 @@ def parse_whatsapp_text(
                 data.append(current)
 
             date, time, player_name, message = match.groups()
-            player_name_lower = player_name.lower()
-
-            system_name_phrases = [
-                "added you to the community",
-                "added you to this group",
-                "added you to the group",
-                "joined from the community",
-                "created group",
-                "created this group",
-                "changed the subject",
-                "changed this group's icon",
-                "changed the group description",
-                "joined using this group's invite link",
-                "messages and calls are end-to-end encrypted",
-                "welcome to the group",
-            ]
-
-            if any(phrase in player_name_lower for phrase in system_name_phrases):
-                current = None
-                continue
 
             player_name = str(player_name).strip()
             message = str(message).strip()
@@ -207,9 +182,8 @@ def parse_whatsapp_text(
                 "Source": source_name,
             }
 
-        else:
-            if current is not None and line.strip():
-                current["Text"] = f"{current['Text']}\n{line.strip()}"
+        elif current is not None and line:
+            current["Text"] += f"\n{line}"
 
     if current is not None:
         data.append(current)
