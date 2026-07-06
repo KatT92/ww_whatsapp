@@ -920,7 +920,7 @@ def plot_most_active_day_by_player(
     ax.set_ylabel("Number of messages")
     ax.grid(True, linestyle="--", alpha=0.5)
 
-    fig.autofmt_xdate()
+    fig.autofmt_xdate(rotation=45)
     fig.tight_layout()
 
     return fig, ax, most_active

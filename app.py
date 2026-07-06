@@ -541,6 +541,7 @@ with tab3:
             chat_df.groupby("DateOnly").size().plot(ax=ax)
             ax.set_xlabel("Date")
             ax.set_ylabel("Messages")
+            fig.autofmt_xdate(rotation=45)
             st.pyplot(fig, width="content")
 
         if graph_selected(selected_graphs, "Word cloud"):
@@ -638,6 +639,16 @@ with tab3:
 
                 st.pyplot(fig, width="content")
 
+
+                fig, ax, active_df = plot_most_active_hour_by_player(
+                    chat_df,
+                    min_messages=5,
+                )
+
+                st.pyplot(fig, width="content")
+
+
+
         if graph_selected(selected_graphs, "Most active day by player"):
             st.subheader("Most active day by player")
 
@@ -666,21 +677,6 @@ with tab3:
 
                 st.pyplot(fig, width="content")
 
-        if graph_selected(selected_graphs, "Most active hour by player"):
-            st.subheader("Most active hour by player")
-
-            fig, ax, active_df = plot_most_active_hour_by_player(
-                chat_df,
-                min_messages=5,
-            )
-
-            st.pyplot(fig, width="content")
-
-            st.dataframe(
-                active_df,
-                width="stretch",
-                hide_index=True,
-            )
 
         if graph_selected(selected_graphs, "Normalised mention heatmap"):
             st.subheader("Special graph for Louis")
@@ -863,11 +859,7 @@ with tab4:
 
                         st.pyplot(fig, width="content")
 
-                        st.dataframe(
-                            cumulative_df,
-                            width="stretch",
-                            hide_index=True,
-                        )
+
 
                 if graph_selected(selected_person_graphs, "Sentiment over time"):
                     st.subheader("Sentiment over time")
@@ -1012,8 +1004,9 @@ with tab4:
                             hide_index=True,
                         )
 
-                if len(selected_people) == 2 and graph_selected(
-                    selected_person_graphs, "Messages between players"
+                if (
+                    len(selected_people) == 2
+                    and graph_selected(selected_person_graphs, "Messages between players")
                 ):
                     st.subheader("Messages between players")
 
@@ -1029,23 +1022,45 @@ with tab4:
                     if interaction_df.empty:
                         st.info("No messages found between these players.")
                     else:
-                        st.dataframe(
-                            interaction_df,
-                            width="stretch",
-                            hide_index=True,
-                        )
+                        interaction_df = interaction_df.copy()
+
+                        if "Direction" not in interaction_df.columns:
+                            if {"From", "To"}.issubset(interaction_df.columns):
+                                interaction_df["Direction"] = (
+                                    interaction_df["From"].astype(str)
+                                    + " → "
+                                    + interaction_df["To"].astype(str)
+                                )
+                            else:
+                                st.error(
+                                    f"messages_between_players() returned unexpected columns: "
+                                    f"{list(interaction_df.columns)}"
+                                )
+                                st.stop()
+
+                        if "Messages" in interaction_df.columns:
+                            message_col = "Messages"
+                        elif "Messages mentioning target" in interaction_df.columns:
+                            message_col = "Messages mentioning target"
+                        else:
+                            st.error(
+                                f"Could not find a message count column. Columns returned: "
+                                f"{list(interaction_df.columns)}"
+                            )
+                            st.stop()
+
 
                         fig, ax = small_fig(6, 3)
 
                         interaction_df.plot.bar(
                             x="Direction",
-                            y="Messages",
+                            y=message_col,
                             ax=ax,
                             legend=False,
                         )
 
                         ax.set_xlabel("Direction")
-                        ax.set_ylabel("Messages")
+                        ax.set_ylabel("Messages mentioning player")
                         ax.set_title("Messages between players")
 
                         st.pyplot(fig, width="content")
@@ -1081,11 +1096,6 @@ with tab4:
                         ax.set_ylabel("Messages mentioning player")
                         st.pyplot(fig, width="content")
 
-                        st.dataframe(
-                            messages,
-                            width="stretch",
-                            hide_index=True,
-                        )
 
                 if len(selected_people) == 2 and graph_selected(
                     selected_person_graphs,
@@ -1134,11 +1144,6 @@ with tab4:
                         ax.set_ylabel("Average sentiment")
                         st.pyplot(fig, width="content")
 
-                        st.dataframe(
-                            daily_sentiment,
-                            width="stretch",
-                            hide_index=True,
-                        )
 
                 if graph_selected(
                     selected_person_graphs,
@@ -1177,11 +1182,7 @@ with tab4:
                         ax.set_ylabel("From")
                         st.pyplot(fig, width="content")
 
-                        st.dataframe(
-                            about_df,
-                            width="stretch",
-                            hide_index=True,
-                        )
+
 
                 if graph_selected(
                     selected_person_graphs,
@@ -1220,11 +1221,6 @@ with tab4:
                         ax.set_ylabel("To")
                         st.pyplot(fig, width="content")
 
-                        st.dataframe(
-                            towards_df,
-                            width="stretch",
-                            hide_index=True,
-                        )
 
 # =========================================================
 # TAB 5 — SPECIFIC STATS
@@ -1245,8 +1241,7 @@ with tab5:
             value=False,
             key="specific_stats_remove_stopwords",
             help=(
-                "Default is off here because exact word/phrase searches usually need "
-                "the original message text."
+                "Original message text used as default"
             ),
         )
 
@@ -1255,7 +1250,7 @@ with tab5:
             remove_stopwords=remove_stopwords,
         )
 
-        st.caption(f"Stats are currently using text column: {stat_text_column}")
+        st.caption(f"Using text column: {stat_text_column}")
 
         with st.expander(
             "How many messages contain two words/phrases together?",
