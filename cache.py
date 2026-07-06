@@ -1,6 +1,5 @@
 """
 Cache and chat-loading helpers for the WhatsApp Streamlit dashboard.
-
 The permanent cache stores original uploaded .txt files plus metadata.
 Processed dataframes are rebuilt from the original txt files when loaded.
 """
