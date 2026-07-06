@@ -60,7 +60,6 @@ def save_uploaded_txt_cache(
 
     safe_name = base_name
 
-
     counter = 2
     while cache_path.exists():
         safe_name = f"{base_name}_{counter}"

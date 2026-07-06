@@ -320,6 +320,26 @@ with tab1:
             key="cache_name_input",
         )
 
+    st.divider()
+
+    col1, col2 = st.columns([8,1])
+
+    with col2:
+        with st.popover("ℹ️ Help"):
+            st.markdown("""
+    ### HELP
+
+    - So, you're here because you need help.
+
+    - If you're having issues with the user experience, that's a you problem, I'm a data scientist not a front-end dev.
+    - If the app breaks it might be a you problem, consider not doing what you just did, but if you think it's a me problem, maybe let me know depending on how broken it is.
+    - If you want another graph, I'll get to it in 4-5 business weeks.                  
+    - If the file isn't uploaded properly try the 2 different patterns in advanced settings
+    - If that doesnt work, try copy and pasting a few lines of the .txt file into chatgpt/a regex formatter and asking what the regex pattern should be and putting it in the custom slot.
+    - If in doubt, press the big red buttons.
+                        
+    """)
+
 # =========================================================
 # TAB 2 — NAME MAPPING
 # =========================================================
@@ -477,9 +497,7 @@ with tab3:
 
         if graph_selected(selected_graphs, "Summary stats"):
             st.subheader("Summary stats")
-            st.caption(
-                "Uses the selected chat rows. Word totals use original Text where full text matters."
-            )
+
             st.dataframe(
                 general_summary_stats(chat_df),
                 width="stretch",
@@ -550,17 +568,13 @@ with tab3:
 
         if graph_selected(selected_graphs, "Total words by person"):
             st.subheader("Total words by person")
-            st.caption(
-                "Uses original Text, not FilteredText, because all words matter here."
-            )
+
             total_word_df = total_words_by_person(chat_df, text_column="Text")
             st.dataframe(total_word_df, width="stretch", hide_index=True)
 
         if graph_selected(selected_graphs, "Longest messages"):
             st.subheader("Longest messages")
-            st.caption(
-                "Uses original Text, because message length should include all words."
-            )
+
             st.dataframe(
                 longest_messages(chat_df, n=10, text_column="Text"),
                 width="stretch",
@@ -596,7 +610,7 @@ with tab3:
 
         if graph_selected(selected_graphs, "Top emojis"):
             st.subheader("Top emojis")
-            st.caption("Uses original Text, because emojis are not words/stopwords.")
+
             st.dataframe(
                 top_emojis(chat_df, n=30, text_column="Text"),
                 width="stretch",
@@ -867,9 +881,7 @@ with tab4:
 
                 if graph_selected(selected_person_graphs, "Total words"):
                     st.subheader("Total words")
-                    st.caption(
-                        "Uses original Text, not FilteredText, because all words matter here."
-                    )
+      
 
                     total_words = (
                         person_df.assign(
@@ -910,9 +922,7 @@ with tab4:
 
                 if graph_selected(selected_person_graphs, "Top emojis"):
                     st.subheader("Top emojis")
-                    st.caption(
-                        "Uses original Text, because emojis are not words/stopwords."
-                    )
+
 
                     for person in selected_people:
                         st.markdown(f"**{person}**")
