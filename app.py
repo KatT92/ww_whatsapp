@@ -833,15 +833,26 @@ with tab4:
                     if cumulative_df.empty:
                         st.info("No cumulative message data available.")
                     else:
+                        pivot = cumulative_df.pivot(
+                            index="DateOnly",
+                            columns="Nickname",
+                            values="Cumulative Messages",
+                        )
+
+                        # Ensure every day is present
+                        all_days = pd.date_range(
+                            pivot.index.min(),
+                            pivot.index.max(),
+                            freq="D",
+                        )
+
                         pivot = (
-                            cumulative_df.pivot(
-                                index="DateOnly",
-                                columns="Nickname",
-                                values="Cumulative Messages",
-                            )
-                            .fillna(method="ffill")
+                            pivot.reindex(all_days)
+                            .ffill()
                             .fillna(0)
                         )
+
+                        pivot.index.name = "Date"
 
                         fig, ax = small_fig(7, 3)
 
